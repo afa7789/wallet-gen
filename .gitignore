@@ -1,0 +1,15 @@
+# NUNCA versionar: wallets reais (chaves cifradas + dica)
+wallets/
+
+# build
+dist/
+build/
+*.spec
+build-requirements.txt
+web/node_modules/
+web/dist/
+
+# caches
+__pycache__/
+.ruff_cache/
+.DS_Store

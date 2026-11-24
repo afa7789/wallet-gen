@@ -1,0 +1,100 @@
+# lint -> checks + executáveis (mac/linux/windows) + web -> Pages (main) / Release (tag v*)
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx ruff check . && uvx ruff format --check .
+      - uses: oven-sh/setup-bun@v2
+      - run: cd web && bun install --frozen-lockfile && ./node_modules/.bin/eslint --max-warnings 0 .
+
+  desktop:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x64, ext: "" }
+          - { os: macos-latest, name: macos-arm64, ext: "" }
+          - { os: windows-latest, name: windows-x64, ext: ".exe" }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      DISPLAY_WRAP: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: check offline (fonte, vetores, GUI, CLI)
+        run: $DISPLAY_WRAP uv run check.py
+      - run: ./build.sh
+      - name: check do executável (CLI inteira + GUI abre)
+        run: $DISPLAY_WRAP uv run check.py --exe dist/wallet-gen${{ matrix.ext }}
+      - run: mv dist/wallet-gen${{ matrix.ext }} dist/wallet-gen-${{ matrix.name }}${{ matrix.ext }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wallet-gen-${{ matrix.name }}
+          path: dist/wallet-gen-${{ matrix.name }}${{ matrix.ext }}
+
+  web:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+      - run: cd web && bun install --frozen-lockfile
+      - name: compat Python<->web + E2E no Chrome (gera web/dist)
+        run: uv run check.py --web
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+      - run: cd web/dist && zip -r ../../wallet-gen-web.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wallet-gen-web
+          path: wallet-gen-web.zip
+
+  pages:
+    if: github.ref == 'refs/heads/main'
+    needs: web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: wallet-gen-*
+          merge-multiple: true
+      - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Executáveis + SHA256SUMS. Veja o README."

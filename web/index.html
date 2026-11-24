@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src https: 'self'; style-src 'unsafe-inline'; img-src data:" />
+    <title>wallet-gen</title>
+    <style>
+      :root { color-scheme: light dark; font-family: -apple-system, system-ui, sans-serif; }
+      body { max-width: 860px; margin: 32px auto; padding: 0 20px; }
+      h1 { margin: 0; font-size: 28px; }
+      .sub { color: gray; margin: 4px 0 24px; }
+      fieldset { border: 1px solid #8884; border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; }
+      legend { font-weight: 600; padding: 0 6px; }
+      label { display: block; margin: 6px 0; }
+      input[type="password"], input[type="text"] { width: 100%; max-width: 420px; padding: 7px 9px; box-sizing: border-box; }
+      button { padding: 7px 14px; margin: 8px 8px 0 0; cursor: pointer; }
+      button.main { font-weight: 600; }
+      #out { background: #1e1e1e; color: #e6e6e6; font: 13px/1.5 Menlo, monospace; padding: 14px; border-radius: 10px;
+             min-height: 220px; white-space: pre-wrap; word-break: break-all; }
+      .dim { color: #8a8a8a; } .secret { color: #ff7b7b; } .error { color: #ff7b7b; font-weight: 600; }
+      .coin { font-weight: 700; } .btc { color: #f7931a; } .eth { color: #8a9cff; } .xmr { color: #ff6b2b; }
+      .tip { color: gray; font-size: 13px; }
+    </style>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <h1>wallet-gen</h1>
+    <p class="sub">BTC · ETH · XMR — chaves geradas aqui no seu navegador, cifradas com sua senha. Nada é enviado.</p>
+
+    <fieldset>
+      <legend>Gerar novo</legend>
+      <label>Senha <input id="senha" type="password" autocomplete="new-password" /></label>
+      <label>Confirmar <input id="confirmar" type="password" autocomplete="new-password" /></label>
+      <label>Dica (fica em aberto no arquivo) <input id="dica" type="text" /></label>
+      <label><input id="viewkey" type="checkbox" /> guardar view key XMR em aberto (permite ver saldo XMR sem senha; não permite gastar)</label>
+      <button id="gerar" class="main">Gerar e baixar arquivo</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Abrir wallet</legend>
+      <label>Arquivo .json <input id="arquivo" type="file" accept=".json,application/json" /></label>
+      <div id="dica-aberta" class="tip"></div>
+      <label>Senha (só para ver privadas) <input id="senha-abrir" type="password" autocomplete="current-password" /></label>
+      <button id="publicas">Ver públicas</button>
+      <button id="privadas">Ver privadas</button>
+      <button id="saldo">Ver saldo</button>
+      <button id="sobre">Sobre</button>
+    </fieldset>
+
+    <div id="out" aria-live="polite"></div>
+    <p class="tip">Mais seguro: baixe <code>wallet-gen-web.zip</code> dos
+      <a href="https://github.com/afa7789/wallet-gen/releases/latest">Releases</a>, descompacte e abra
+      <code>index.html</code> sem internet. Código e disclosure: <a href="https://github.com/afa7789/wallet-gen">github.com/afa7789/wallet-gen</a>.</p>
+    <details class="tip">
+      <summary>Curtiu? Doações</summary>
+      <p>BTC <code>bc1qqjykl9nym5qn9u2dpqt0vfz8cgl4pt3n8mkngq</code><br />
+        ETH <code>0xa2FB6CA627659644EFeBe3A83361e22e8B34921C</code><br />
+        XMR <code style="word-break: break-all">42Nv3KCbqexE78fZMeMrjRHMDME62s5Jya71Pz12e79HUP6Wwbr37uG9ukRWrtvTg2WkikNk1NCz4RcU3dDcafUhLtdTdfY</code></p>
+    </details>
+  </body>
+</html>
