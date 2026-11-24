@@ -180,6 +180,6 @@ Curtiu? Endereços gerados com o próprio wallet-gen:
 
 | Moeda | Endereço |
 |---|---|
-| BTC | [`bc1qqjykl9nym5qn9u2dpqt0vfz8cgl4pt3n8mkngq`](bitcoin:bc1qqjykl9nym5qn9u2dpqt0vfz8cgl4pt3n8mkngq) |
-| ETH | [`0xa2FB6CA627659644EFeBe3A83361e22e8B34921C`](ethereum:0xa2FB6CA627659644EFeBe3A83361e22e8B34921C) |
-| XMR | [`42Nv3KCbqexE78fZMeMrjRHMDME62s5Jya71Pz12e79HUP6Wwbr37uG9ukRWrtvTg2WkikNk1NCz4RcU3dDcafUhLtdTdfY`](monero:42Nv3KCbqexE78fZMeMrjRHMDME62s5Jya71Pz12e79HUP6Wwbr37uG9ukRWrtvTg2WkikNk1NCz4RcU3dDcafUhLtdTdfY) |
+| BTC | [`bc1qh6ga6jf2x7m5gk56a08f2gqxet0fs56fcv9x4z`](bitcoin:bc1qh6ga6jf2x7m5gk56a08f2gqxet0fs56fcv9x4z) |
+| ETH | [`0x2416A3816879B862E5E603f373024B621A2A0FAF`](ethereum:0x2416A3816879B862E5E603f373024B621A2A0FAF) |
+| XMR | [`4A6n2rJG3mhC9kv8kJA3J32hACxRLpE8EbAk4JTa3cYVBpj53tbVgjH7x9FKRDzrDD8ALgA2PrMqJg4LXrQpJLn64kXepsc`](monero:4A6n2rJG3mhC9kv8kJA3J32hACxRLpE8EbAk4JTa3cYVBpj53tbVgjH7x9FKRDzrDD8ALgA2PrMqJg4LXrQpJLn64kXepsc) |
