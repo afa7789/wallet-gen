@@ -44,35 +44,51 @@ export async function addresses(keys) {
 
 const utf8 = (s) => new TextEncoder().encode(s);
 
-async function aesKey(password, kdf, usage) {
+async function aesKey(password, kdf) {
   const pw = utf8(password.normalize("NFC"));
   const raw = await scryptAsync(pw, hexToBytes(kdf.salt), { N: kdf.n, r: kdf.r, p: kdf.p, dkLen: 32 });
-  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, [usage]);
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+/** AES-256-GCM, nonce novo (16 bytes) a cada chamada: nunca reusa nonce com a mesma chave. */
+async function lock(key, plain) {
+  const nonce = random(16);
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plain));
+  return { nonce: bytesToHex(nonce), data: bytesToHex(sealed.slice(0, -16)), tag: bytesToHex(sealed.slice(-16)) };
+}
+
+async function unlockBox(key, box) {
+  const sealed = new Uint8Array([...hexToBytes(box.data), ...hexToBytes(box.tag)]);
+  try {
+    return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: hexToBytes(box.nonce) }, key, sealed));
+  } catch {
+    throw new Error("senha errada");
+  }
 }
 
 export async function seal(keys, password, hint, keepViewKey = false) {
   const kdf = { ...SCRYPT, salt: bytesToHex(random(16)) };
-  const nonce = random(16);
-  const plain = utf8(JSON.stringify(keys));
-  const key = await aesKey(password, kdf, "encrypt");
-  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plain));
-  const box = { nonce: bytesToHex(nonce), data: bytesToHex(sealed.slice(0, -16)), tag: bytesToHex(sealed.slice(-16)) };
+  const box = await lock(await aesKey(password, kdf), utf8(JSON.stringify(keys)));
   const wallet = { hint, created: Math.floor(Date.now() / 1000), addresses: await addresses(keys), scrypt: kdf, aes_gcm: box };
   if (keepViewKey) wallet.xmr_view_key = await (await xmrWallet({ seed: keys.xmr })).getPrivateViewKey();
   return wallet;
 }
 
-/** Senha errada -> Error("senha errada"). */
-export async function unseal(wallet, password) {
-  const box = wallet.aes_gcm;
-  const key = await aesKey(password, wallet.scrypt, "decrypt");
-  const sealed = new Uint8Array([...hexToBytes(box.data), ...hexToBytes(box.tag)]);
-  try {
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: hexToBytes(box.nonce) }, key, sealed);
-    return JSON.parse(new TextDecoder().decode(plain));
-  } catch {
-    throw new Error("senha errada");
-  }
+/** { keys, notes } com uma derivação scrypt. Senha errada -> Error("senha errada"). Sem notas -> "". */
+export async function unlock(wallet, password) {
+  const key = await aesKey(password, wallet.scrypt);
+  const keys = JSON.parse(new TextDecoder().decode(await unlockBox(key, wallet.aes_gcm)));
+  const notes = wallet.notes_gcm ? new TextDecoder().decode(await unlockBox(key, wallet.notes_gcm)) : "";
+  return { keys, notes };
+}
+
+export const unseal = async (wallet, password) => (await unlock(wallet, password)).keys;
+
+/** Vault: notas cifradas com a mesma senha, no mesmo arquivo. Chaves (aes_gcm) intactas. */
+export async function withNotes(wallet, password, notes) {
+  const key = await aesKey(password, wallet.scrypt);
+  await unlockBox(key, wallet.aes_gcm); // senha errada para aqui
+  return { ...wallet, notes_gcm: await lock(key, utf8(notes)) };
 }
 
 export function fileName(date = new Date()) {

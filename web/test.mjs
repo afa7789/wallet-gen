@@ -6,7 +6,7 @@ import { bytesToHex, bytesToNumberLE } from "@noble/curves/utils.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { WIF } from "@scure/btc-signer";
 import moneroTs from "monero-ts";
-import { addresses, newSecrets, seal, unseal } from "./src/wallet.js";
+import { addresses, newSecrets, seal, unlock, unseal, withNotes } from "./src/wallet.js";
 
 const KEY_ONE = { btc: "p2wpkh:KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn", eth: `${"00".repeat(31)}01` };
 
@@ -52,15 +52,29 @@ async function checkSeal() {
   await assert.rejects(unseal(wallet, "errada"), /senha errada/);
 }
 
+async function checkNotes() {
+  const keys = await newSecrets();
+  const wallet = await seal(keys, "pw", "");
+  assert.deepEqual(await unlock(wallet, "pw"), { keys, notes: "" });
+  const first = await withNotes(wallet, "pw", "nota ç ✓");
+  const second = await withNotes(first, "pw", "nota ç ✓");
+  assert.deepEqual(first.aes_gcm, wallet.aes_gcm, "notas não podem mexer nas chaves");
+  assert.notEqual(first.notes_gcm.nonce, second.notes_gcm.nonce, "nonce reusado com a mesma chave");
+  assert.deepEqual(await unlock(second, "pw"), { keys, notes: "nota ç ✓" });
+  await assert.rejects(withNotes(wallet, "errada", "x"), /senha errada/);
+}
+
 const [cmd, file, password] = process.argv.slice(2);
 if (cmd === "open") {
-  console.log(JSON.stringify(await unseal(JSON.parse(readFileSync(file, "utf8")), password)));
+  console.log(JSON.stringify(await unlock(JSON.parse(readFileSync(file, "utf8")), password)));
 } else if (cmd === "make") {
-  writeFileSync(file, JSON.stringify(await seal(await newSecrets(), password, "dica web", true), null, 2));
+  const made = await seal(await newSecrets(), password, "dica web", true);
+  writeFileSync(file, JSON.stringify(await withNotes(made, password, "nota web ç ✓"), null, 2));
 } else {
   await checkVectors();
   await checkEntropySource();
   await checkSeal();
+  await checkNotes();
   console.log("web OK");
 }
 process.exit(0);

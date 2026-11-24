@@ -22,6 +22,7 @@
       .dim { color: #8a8a8a; } .secret { color: #ff7b7b; } .error { color: #ff7b7b; font-weight: 600; }
       .coin { font-weight: 700; } .btc { color: #f7931a; } .eth { color: #8a9cff; } .xmr { color: #ff6b2b; }
       .tip { color: gray; font-size: 13px; }
+      textarea { width: 100%; box-sizing: border-box; margin-top: 8px; font: 13px/1.4 Menlo, monospace; padding: 8px; }
     </style>
     <script defer src="app.js"></script>
   </head>
@@ -47,6 +48,13 @@
       <button id="privadas">Ver privadas</button>
       <button id="saldo">Ver saldo</button>
       <button id="sobre">Sobre</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Notas (vault)</legend>
+      <div class="tip">Cifradas com a mesma senha, no mesmo arquivo. Liberadas em "Ver privadas".</div>
+      <textarea id="notas" rows="5" disabled placeholder="abra as privadas para editar"></textarea>
+      <button id="salvar-notas" disabled>Salvar notas e baixar arquivo</button>
     </fieldset>
 
     <div id="out" aria-live="polite"></div>

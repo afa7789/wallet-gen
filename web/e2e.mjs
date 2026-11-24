@@ -77,6 +77,16 @@ async function fullFlow(ctx) {
   await page.waitForFunction(() => document.querySelector("#out").innerText.includes("privada"));
   assert.match(await out(), /privada +p2wpkh:[KL]\w{51}/);
 
+  assert.equal(await page.isDisabled("#notas"), false, "notas liberadas após Ver privadas");
+  await page.fill("#notas", "nota e2e ç ✓");
+  const [saved] = await Promise.all([page.waitForEvent("download"), page.click("#salvar-notas")]);
+  await saved.saveAs(join(outDir, "web-wallet-notas.json"));
+  assert.match(await out(), /Notas salvas/);
+
+  await page.click("#publicas");
+  assert.ok(await page.isDisabled("#notas"), "outra tela fecha o vault");
+  assert.ok(await page.isDisabled("#salvar-notas"));
+
   await page.click("#sobre");
   assert.match(await out(), /crypto\.getRandomValues/);
   assert.match(await out(), /monero-ts 0\.11\.22/);

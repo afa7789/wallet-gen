@@ -38,6 +38,11 @@ XMR_GENERAL_FUND = {  # view-only publicado em getmonero.org/get-started/contrib
 }
 
 
+def assert_private(path: Path) -> None:
+    """POSIX: 0600. Windows não tem modo Unix: protege pelo ACL da pasta do usuário."""
+    assert os.name == "nt" or stat.S_IMODE(path.stat().st_mode) == 0o600, oct(path.stat().st_mode)
+
+
 def expect(exc, fn, *args) -> None:
     try:
         fn(*args)
@@ -89,7 +94,7 @@ def check_file(folder: Path) -> None:
     wallet = w.seal(keys, "çenha forte", "dica x")
     path = w.save(wallet, folder)
     raw = path.read_text()
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert_private(path)
     assert all(k not in raw for k in keys.values()) and "xmr_view_key" not in raw
     loaded = json.loads(raw)
     assert w.unseal(loaded, "çenha forte") == keys
@@ -110,6 +115,26 @@ def check_file(folder: Path) -> None:
     assert first.read_text() == before, "save sobrescreveu arquivo existente"
     first.unlink()
     second.unlink()
+
+
+def check_notes(folder: Path) -> None:
+    """Vault: mesma senha e arquivo; chaves intactas; nonce novo por gravação; senha errada não grava."""
+    keys = w.new_secrets()
+    wallet = w.seal(keys, "pw", "")
+    assert w.unlock(wallet, "pw") == (keys, ""), "arquivo sem notas -> notas vazias"
+    first = w.with_notes(wallet, "pw", "nota ç")
+    second = w.with_notes(first, "pw", "nota ç")
+    assert first["aes_gcm"] == wallet["aes_gcm"] and w.unlock(second, "pw") == (keys, "nota ç")
+    assert first["notes_gcm"]["nonce"] != second["notes_gcm"]["nonce"], "nonce reusado com a mesma chave"
+    assert first["notes_gcm"]["nonce"] != wallet["aes_gcm"]["nonce"]
+    expect(ValueError, w.with_notes, wallet, "errada", "x")
+    path = folder / "vault.json"
+    w.rewrite(path, first)
+    w.rewrite(path, second)
+    assert_private(path)
+    assert json.loads(path.read_text()) == second
+    assert [p.name for p in folder.iterdir()] == ["vault.json"], "sobrou arquivo temporário"
+    path.unlink()
 
 
 def check_config() -> None:
@@ -179,13 +204,42 @@ def check_cli(home: Path, exe: list[str] | None = None) -> None:
     assert wrong.returncode != 0 and "senha errada" in wrong.stderr and keys["eth"] not in wrong.stdout
     assert cli(home, "publicas", "nao-existe.json", exe=exe).returncode != 0
 
+    notes = "cofre: ç ✓\nlinha 2\n"
+    put = cli(home, "notas", path.name, "--gravar", stdin=f"çenha\n{notes}", exe=exe)
+    assert put.returncode == 0 and "Notas salvas" in put.stdout, put.stderr
+    assert cli(home, "notas", path.name, stdin="çenha\n", exe=exe).stdout == notes + "\n"
+    assert json.loads(path.read_text())["aes_gcm"] == saved["aes_gcm"], "notas não podem mexer nas chaves"
+    refused = cli(home, "notas", path.name, "--gravar", stdin="errada\nlixo", exe=exe)
+    assert refused.returncode != 0 and w.unlock(json.loads(path.read_text()), "çenha")[1] == notes
+
     sobre = cli(home, "sobre", exe=exe)
     assert sobre.returncode == 0 and "os.urandom" in sobre.stdout and f"Pasta: {home}" in sobre.stdout
     assert cli(home, "--about", exe=exe).stdout == sobre.stdout
     helptext = cli(home, "--help", exe=exe).stdout
-    assert all(c in helptext for c in ("gerar", "lista", "publicas", "privadas", "saldo", "sobre"))
-    path.unlink()
+    assert all(c in helptext for c in ("gerar", "lista", "publicas", "privadas", "notas", "saldo", "sobre"))
+    check_cli_json(home, path, keys, notes, exe)
+    for f in (home / "wallets").iterdir():
+        f.unlink()
     (home / "wallets").rmdir()
+
+
+def check_cli_json(home: Path, path: Path, keys: dict, notes: str, exe: list[str] | None) -> None:
+    """Agentes: --json (antes/depois do comando) = 1 objeto JSON; erro = {"erro"} + exit 1."""
+
+    def as_json(*args: str, stdin: str = "") -> dict:
+        done = cli(home, *args, stdin=stdin, exe=exe)
+        return {"exit": done.returncode, **json.loads(done.stdout)}
+
+    made = as_json("--json", "gerar", "--guardar-view-key", "--dica", "agente", stdin="s\ns\n")
+    assert made["exit"] == 0 and made["view_key_guardada"] is True and Path(made["arquivo"]).exists()
+    assert json.loads(Path(made["arquivo"]).read_text())["addresses"] == made["enderecos"]
+    assert set(as_json("lista", "--json")["arquivos"]) == {path.name, Path(made["arquivo"]).name}
+    assert as_json("publicas", path.name, "--json")["dica"] == "minha dica"
+    priv = as_json("privadas", path.name, "--json", stdin="çenha\n")
+    assert priv["privadas"] == keys and priv["notas"] == notes and priv["enderecos"] == w.addresses(keys)
+    assert as_json("notas", path.name, "--json", stdin="çenha\n")["notas"] == notes
+    assert as_json("--json", "privadas", path.name, stdin="errada\n") == {"exit": 1, "erro": "senha errada"}
+    assert "os.urandom" in as_json("sobre", "--json")["texto"]
 
 
 def walk(widget):
@@ -211,7 +265,9 @@ def check_gui(folder: Path) -> None:
     w.simpledialog.askstring = lambda *a, **k: answers["pw"]
     app = w.App()
     btn = {b.cget("text"): b for b in walk(app) if b.winfo_class() == "TButton"}
-    assert set(btn) == {"Gerar novo", "Ver públicas", "Ver privadas", "Ver saldo", "Sobre"}, btn
+    assert set(btn) == {"Gerar novo", "Ver públicas", "Ver privadas", "Ver saldo", "Sobre", "Salvar notas"}, (
+        btn
+    )
 
     def text() -> str:
         return app.out.get("1.0", "end")
@@ -237,9 +293,21 @@ def check_gui(folder: Path) -> None:
     opted.unlink()
     w.CONFIG_PATH.unlink()
 
+    assert app.notes.cget("state") == "disabled", "notas fechadas antes de Ver privadas"
     answers.update(path=str(path), pw="abc")
     btn["Ver privadas"].invoke()
     assert all(k in text() for k in keys.values()) and len(errors) == 1
+
+    assert app.notes.cget("state") == "normal" and app.notes.get("1.0", "end-1c") == ""
+    app.notes.insert("1.0", "seed do cofre: ç ✓\nlinha 2")
+    btn["Salvar notas"].invoke()
+    vaulted = json.loads(path.read_text())
+    assert vaulted["aes_gcm"] == saved["aes_gcm"] and "seed do cofre" not in path.read_text()
+    assert w.unlock(vaulted, "abc") == (keys, "seed do cofre: ç ✓\nlinha 2") and "Notas salvas" in text()
+    btn["Ver públicas"].invoke()
+    assert app.notes.cget("state") == "disabled" and app.vault is None, "outra tela fecha o vault"
+    btn["Ver privadas"].invoke()
+    assert app.notes.get("1.0", "end-1c") == "seed do cofre: ç ✓\nlinha 2", "notas reabrem"
 
     app.out.delete("1.0", "end")
     answers["pw"] = "errada"
@@ -351,15 +419,19 @@ def check_web(online: bool) -> None:
     with tempfile.TemporaryDirectory() as d:
         keys = w.new_secrets()
         py_file = Path(d) / "python.json"
-        py_file.write_text(json.dumps(w.seal(keys, "çenha", "dica py")))
-        assert json.loads(run_web("node", "test.mjs", "open", str(py_file), "çenha")) == keys
+        py_file.write_text(json.dumps(w.with_notes(w.seal(keys, "çenha", "dica py"), "çenha", "nota py ç ✓")))
+        opened = json.loads(run_web("node", "test.mjs", "open", str(py_file), "çenha"))
+        assert opened == {"keys": keys, "notes": "nota py ç ✓"}, opened
         js_file = Path(d) / "js.json"
         run_web("node", "test.mjs", "make", str(js_file), "çenha")
         assert_opens_in_python(js_file, "çenha")
+        assert w.unlock(json.loads(js_file.read_text()), "çenha")[1] == "nota web ç ✓"
         run_web("bun", "build.mjs")
         print(run_web("node", "e2e.mjs", d, *(["--online"] if online else [])).strip())
-        for name in ("web-wallet.json", "web-wallet-offline.json"):
+        for name in ("web-wallet.json", "web-wallet-offline.json", "web-wallet-notas.json"):
             assert_opens_in_python(Path(d) / name, "senha-e2e")
+        notas = json.loads((Path(d) / "web-wallet-notas.json").read_text())
+        assert w.unlock(notas, "senha-e2e")[1] == "nota e2e ç ✓", "notas salvas na página não abrem no Python"
     print("web OK: compat Python<->web nos dois sentidos")
 
 
@@ -409,6 +481,7 @@ if __name__ == "__main__":
             check_about()
             check_config()
             check_file(Path(d))
+            check_notes(Path(d))
             check_gui(Path(d))
         with tempfile.TemporaryDirectory() as home:
             check_cli(Path(home))

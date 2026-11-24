@@ -156,28 +156,58 @@ def _aes_key(password: str, kdf: dict) -> bytes:
     return scrypt(pw, bytes.fromhex(kdf["salt"]), 32, N=kdf["n"], r=kdf["r"], p=kdf["p"])
 
 
+def _lock(key: bytes, plain: bytes) -> dict:
+    """AES-256-GCM com nonce novo (16 bytes, os.urandom) a cada chamada: nunca reusa nonce."""
+    cipher = AES.new(key, AES.MODE_GCM)
+    data, tag = cipher.encrypt_and_digest(plain)
+    return {"nonce": cipher.nonce.hex(), "data": data.hex(), "tag": tag.hex()}
+
+
+def _unlock_box(key: bytes, box: dict) -> bytes:
+    raw = {k: bytes.fromhex(v) for k, v in box.items()}
+    return AES.new(key, AES.MODE_GCM, nonce=raw["nonce"]).decrypt_and_verify(raw["data"], raw["tag"])
+
+
 def seal(keys: dict, password: str, hint: str, keep_view_key: bool = False) -> dict:
     kdf = {**SCRYPT, "salt": secrets.token_hex(16)}
-    cipher = AES.new(_aes_key(password, kdf), AES.MODE_GCM)
-    data, tag = cipher.encrypt_and_digest(json.dumps(keys).encode())
-    box = {"nonce": cipher.nonce.hex(), "data": data.hex(), "tag": tag.hex()}
     wallet = {
         "hint": hint,
         "created": int(time.time()),
         "addresses": addresses(keys),
         "scrypt": kdf,
-        "aes_gcm": box,
+        "aes_gcm": _lock(_aes_key(password, kdf), json.dumps(keys).encode()),
     }
     if keep_view_key:  # opt-in: permite ver XMR recebido sem senha; não permite gastar
         wallet["xmr_view_key"] = _xmr(keys).PrivateViewKey().Raw().ToHex()
     return wallet
 
 
+def unlock(wallet: dict, password: str) -> tuple[dict, str]:
+    """(chaves, notas) com uma derivação scrypt só. Senha errada -> ValueError. Sem notas -> ""."""
+    key = _aes_key(password, wallet["scrypt"])
+    keys = json.loads(_unlock_box(key, wallet["aes_gcm"]))
+    notes = _unlock_box(key, wallet["notes_gcm"]).decode() if "notes_gcm" in wallet else ""
+    return keys, notes
+
+
 def unseal(wallet: dict, password: str) -> dict:
-    """Senha errada -> ValueError."""
-    box = {k: bytes.fromhex(v) for k, v in wallet["aes_gcm"].items()}
-    cipher = AES.new(_aes_key(password, wallet["scrypt"]), AES.MODE_GCM, nonce=box["nonce"])
-    return json.loads(cipher.decrypt_and_verify(box["data"], box["tag"]))
+    return unlock(wallet, password)[0]
+
+
+def with_notes(wallet: dict, password: str, notes: str) -> dict:
+    """Vault: notas cifradas com a mesma senha, no mesmo arquivo. Chaves (aes_gcm) intactas."""
+    key = _aes_key(password, wallet["scrypt"])
+    _unlock_box(key, wallet["aes_gcm"])  # senha errada para aqui, antes de gravar qualquer coisa
+    return {**wallet, "notes_gcm": _lock(key, notes.encode())}
+
+
+def rewrite(path: Path, wallet: dict) -> None:
+    """Atualiza arquivo existente de forma atômica (tmp 0600 + rename): queda no meio não corrompe."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(wallet, f, indent=2)
+    os.replace(tmp, path)
 
 
 def save(wallet: dict, folder: Path = WALLETS_DIR) -> Path:
@@ -238,7 +268,7 @@ class App(tk.Tk):
         self.out = tk.Text(
             box,
             width=100,
-            height=16,
+            height=13,
             wrap="word",
             font=("Menlo", 12),
             relief="flat",
@@ -254,9 +284,42 @@ class App(tk.Tk):
         self.out.tag_configure("secret", foreground="#ff7b7b")
         for coin, color in COIN_COLORS.items():
             self.out.tag_configure(coin, foreground=color, font=("Menlo", 13, "bold"))
+        hint = "Notas (cifradas com a mesma senha, no mesmo arquivo) — liberadas em Ver privadas"
+        ttk.Label(box, text=hint, foreground="gray").grid(
+            row=7, column=0, columnspan=3, sticky="w", pady=(12, 4)
+        )
+        self.notes = tk.Text(
+            box, width=100, height=6, wrap="word", font=("Menlo", 12), relief="flat", padx=14
+        )
+        self.notes.grid(row=8, column=0, columnspan=3, sticky="nsew")
+        self.save_notes_btn = ttk.Button(box, text="Salvar notas", command=self.save_notes)
+        self.save_notes_btn.grid(row=9, column=2, sticky="e", pady=(8, 0))
+        self.vault: tuple[Path, str] | None = None  # (arquivo, senha) só enquanto as privadas estão abertas
+        self._lock_notes()
+
+    def _lock_notes(self) -> None:
+        self.vault = None
+        self.notes.configure(state="normal")
+        self.notes.delete("1.0", "end")
+        self.notes.configure(state="disabled")
+        self.save_notes_btn.configure(state="disabled")
+
+    def _open_notes(self, path: str, password: str, notes: str) -> None:
+        self.vault = (Path(path), password)
+        self.notes.configure(state="normal")
+        self.notes.insert("1.0", notes)
+        self.save_notes_btn.configure(state="normal")
+
+    def save_notes(self) -> None:
+        if not self.vault:
+            return
+        path, password = self.vault
+        rewrite(path, with_notes(json.loads(path.read_text()), password, self.notes.get("1.0", "end-1c")))
+        self.out.insert("end", f"\nNotas salvas (cifradas) em {path}\n", "dim")
 
     def _clear(self) -> None:
         self.screen += 1  # tela nova: poll de saldo antigo para de redesenhar
+        self._lock_notes()  # qualquer outra tela fecha o vault
         self.out.delete("1.0", "end")
 
     def show(self, title: str, addrs: dict, keys: dict | None = None, balances: dict | None = None) -> None:
@@ -314,15 +377,17 @@ class App(tk.Tk):
         if not (picked := self.pick()):
             return
         path, wallet = picked
+        self._lock_notes()  # outro arquivo: vault anterior fecha antes de pedir senha
         pw = simpledialog.askstring("Senha", f"Dica: {wallet['hint']}\n\nSenha:", show="*", parent=self)
         if pw is None:
             return
         try:
-            keys = unseal(wallet, pw)
+            keys, notes = unlock(wallet, pw)
         except ValueError:
             messagebox.showerror("Erro", "Senha errada.")
             return
         self.show(path, addresses(keys), keys)
+        self._open_notes(path, pw, notes)
 
 
 def _ask(prompt: str) -> str:
@@ -344,40 +409,72 @@ def _open(name: str) -> tuple[Path, dict]:
     return path, json.loads(path.read_text())
 
 
-def _print(title: str, addrs: dict, keys: dict | None = None, balances: dict | None = None) -> None:
-    print(title)
+def _text(title: str, addrs: dict, keys: dict | None = None, balances: dict | None = None) -> str:
+    lines = [title]
     for label, value, _tag in rows(addrs, keys, balances):
-        print(f"  {label:<9} {value}" if label else f"\n{value}")
+        lines.append(f"  {label:<9} {value}" if label else f"\n{value}")
+    return "\n".join(lines)
+
+
+def _emit(args, data: dict, human: str) -> None:
+    """--json: um objeto JSON por comando no stdout (para agentes/scripts). Senão: texto legível."""
+    print(json.dumps(data, ensure_ascii=False) if args.json else human)
+
+
+def _unlock_cli(args) -> tuple[Path, dict, str, dict, str]:
+    path, wallet = _open(args.arquivo)
+    print(f"Dica: {wallet['hint']}", file=sys.stderr)
+    password = _ask("Senha: ")
+    try:
+        keys, notes = unlock(wallet, password)
+    except ValueError:
+        raise SystemExit("erro: senha errada") from None
+    return path, wallet, password, keys, notes
 
 
 def cmd_gerar(args) -> None:
     pw = _ask("Senha: ")
     if not pw or pw != _ask("Confirmar: "):
         raise SystemExit("erro: senha vazia ou diferente da confirmação")
-    keep_view_key = load_config()["guardar_view_key_xmr"]
+    keep_view_key = args.guardar_view_key or load_config()["guardar_view_key_xmr"]
     wallet = seal(new_secrets(), pw, args.dica, keep_view_key)
+    path = save(wallet)
+    data = {"arquivo": str(path), "enderecos": wallet["addresses"], "view_key_guardada": keep_view_key}
     note = " (view key XMR guardada em aberto)" if keep_view_key else ""
-    _print(f"Salvo em {save(wallet)}{note}", wallet["addresses"])
+    _emit(args, data, _text(f"Salvo em {path}{note}", wallet["addresses"]))
 
 
 def cmd_lista(args) -> None:
-    files = sorted(WALLETS_DIR.glob("*.json"))
-    print("\n".join(f.name for f in files) if files else f"nenhuma wallet em {WALLETS_DIR}")
+    files = [f.name for f in sorted(WALLETS_DIR.glob("*.json"))]
+    _emit(
+        args,
+        {"pasta": str(WALLETS_DIR), "arquivos": files},
+        "\n".join(files) or f"nenhuma wallet em {WALLETS_DIR}",
+    )
 
 
 def cmd_publicas(args) -> None:
     path, wallet = _open(args.arquivo)
-    _print(str(path), wallet["addresses"])
+    data = {"arquivo": str(path), "dica": wallet["hint"], "enderecos": wallet["addresses"]}
+    _emit(args, data, _text(str(path), wallet["addresses"]))
 
 
 def cmd_privadas(args) -> None:
-    path, wallet = _open(args.arquivo)
-    print(f"Dica: {wallet['hint']}", file=sys.stderr)
-    try:
-        keys = unseal(wallet, _ask("Senha: "))
-    except ValueError:
-        raise SystemExit("erro: senha errada") from None
-    _print(str(path), addresses(keys), keys)
+    path, _wallet, _pw, keys, notes = _unlock_cli(args)
+    addrs = addresses(keys)
+    data = {"arquivo": str(path), "enderecos": addrs, "privadas": keys, "notas": notes}
+    _emit(args, data, _text(str(path), addrs, keys) + (f"\n\nNOTAS\n{notes}" if notes else ""))
+
+
+def cmd_notas(args) -> None:
+    path, wallet, password, _keys, notes = _unlock_cli(args)
+    if args.gravar:  # notas novas = resto do stdin, depois da linha da senha
+        if sys.stdin.isatty():
+            print("Digite as notas; Ctrl-D (Ctrl-Z Enter no Windows) para salvar:", file=sys.stderr)
+        notes = sys.stdin.read()
+        rewrite(path, with_notes(wallet, password, notes))
+    data = {"arquivo": str(path), "notas": notes, "gravou": args.gravar}
+    _emit(args, data, f"Notas salvas (cifradas) em {path}" if args.gravar else notes)
 
 
 def cmd_saldo(args) -> None:
@@ -385,37 +482,67 @@ def cmd_saldo(args) -> None:
     print("consultando nós públicos…", file=sys.stderr)
     found: dict = {}
     nodes.fill_balances(wallet, load_config()["nos"], found)
-    _print(str(path), wallet["addresses"], balances=found)
+    data = {"arquivo": str(path), "enderecos": wallet["addresses"], "saldo": found}
+    _emit(args, data, _text(str(path), wallet["addresses"], balances=found))
 
 
 def cmd_sobre(args) -> None:
-    print(about())
+    text = about()
+    _emit(args, {"texto": text}, text)
+
+
+HELP = """Wallets BTC/ETH/XMR. Sem comando: abre a janela.
+Agentes/scripts: --json (um objeto JSON no stdout; erro = {"erro": ...} e exit 1).
+Senha nunca como argumento: no terminal é pedida; em pipe vai na 1a linha do stdin."""
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="wallet-gen", description=HELP, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--about", action="store_true", help="igual a 'sobre'")
+    parser.add_argument("--json", action="store_true", help="saída JSON (para agentes e scripts)")
+    common = argparse.ArgumentParser(add_help=False)  # --json também depois do comando
+    common.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    sub = parser.add_subparsers(metavar="comando")
+    gerar = sub.add_parser("gerar", parents=[common], help="gera novo conjunto (pede a senha 2x)")
+    gerar.add_argument("--dica", default="", help="dica da senha (fica em aberto no arquivo)")
+    gerar.add_argument("--guardar-view-key", action="store_true", help="guarda view key XMR em aberto")
+    gerar.set_defaults(run=cmd_gerar)
+    sub.add_parser("lista", parents=[common], help=f"lista as wallets em {WALLETS_DIR}").set_defaults(
+        run=cmd_lista
+    )
+    for name, run, helptext in [
+        ("publicas", cmd_publicas, "mostra endereços (sem senha)"),
+        ("privadas", cmd_privadas, "mostra chaves privadas + notas (pede a senha)"),
+        ("notas", cmd_notas, "mostra as notas cifradas; --gravar substitui pelo stdin"),
+        ("saldo", cmd_saldo, "saldo via nós públicos (sem senha)"),
+    ]:
+        cmd = sub.add_parser(name, parents=[common], help=helptext)
+        cmd.add_argument("arquivo", help="nome dentro de wallets/ ou caminho do .json")
+        cmd.set_defaults(run=run)
+        if name == "notas":
+            cmd.add_argument("--gravar", action="store_true", help="lê as notas novas do stdin e salva")
+    sub.add_parser("sobre", parents=[common], help="o que gera as chaves + versões em uso").set_defaults(
+        run=cmd_sobre
+    )
+    return parser
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="wallet-gen", description="Wallets BTC/ETH/XMR. Sem comando: GUI.")
-    parser.add_argument("--about", action="store_true", help="igual a 'sobre'")
-    sub = parser.add_subparsers(metavar="comando")
-    gerar = sub.add_parser("gerar", help="gera novo conjunto (pede a senha 2x)")
-    gerar.add_argument("--dica", default="", help="dica da senha (fica em aberto no arquivo)")
-    gerar.set_defaults(run=cmd_gerar)
-    sub.add_parser("lista", help=f"lista as wallets em {WALLETS_DIR}").set_defaults(run=cmd_lista)
-    for name, run, helptext in [
-        ("publicas", cmd_publicas, "mostra endereços (sem senha)"),
-        ("privadas", cmd_privadas, "mostra chaves privadas (pede a senha)"),
-        ("saldo", cmd_saldo, "saldo via nós públicos (sem senha)"),
-    ]:
-        cmd = sub.add_parser(name, help=helptext)
-        cmd.add_argument("arquivo", help="nome dentro de wallets/ ou caminho do .json")
-        cmd.set_defaults(run=run)
-    sub.add_parser("sobre", help="o que gera as chaves + versões em uso").set_defaults(run=cmd_sobre)
-    args = parser.parse_args(argv)
+    args = _parser().parse_args(argv)
     if args.about:
         args.run = cmd_sobre
-    if hasattr(args, "run"):
-        args.run(args)
-    else:
+    if not hasattr(args, "run"):
         App().mainloop()
+        return
+    try:
+        args.run(args)
+    except SystemExit as e:
+        if not (args.json and isinstance(e.code, str)):
+            raise
+        print(json.dumps({"erro": e.code.removeprefix("erro: ")}, ensure_ascii=False))
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

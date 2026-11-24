@@ -27,7 +27,9 @@ Mesmos comandos no executável (`./wallet-gen-macos-arm64 …`) e no código (`u
 wallet-gen gerar --dica "minha dica"          # pede a senha 2x, salva, mostra endereços
 wallet-gen lista                              # lista arquivos em wallets/
 wallet-gen publicas 2026-11-24_113356.json    # endereços (sem senha)
-wallet-gen privadas 2026-11-24_113356.json    # mostra a dica, pede a senha, mostra chaves
+wallet-gen privadas 2026-11-24_113356.json    # mostra a dica, pede a senha, mostra chaves + notas
+wallet-gen notas    2026-11-24_113356.json    # só as notas cifradas (pede a senha)
+wallet-gen notas    2026-11-24_113356.json --gravar   # substitui as notas pelo que vier no stdin
 wallet-gen saldo    2026-11-24_113356.json    # saldo via nós públicos (sem senha)
 wallet-gen sobre                              # o que gera as chaves + versões em uso
 wallet-gen                                    # sem comando: abre a janela
@@ -37,13 +39,30 @@ wallet-gen                                    # sem comando: abre a janela
 - Senha nunca vai como argumento (ficaria no histórico do shell). No terminal ela não aparece ao digitar; em script, vai pelo stdin: `printf 'senha\nsenha\n' | wallet-gen gerar`.
 - Erro (senha errada, arquivo não achado) → exit ≠ 0.
 
+### Para agentes e scripts (`--json`)
+
+`--json` (antes ou depois do comando) → **um objeto JSON** no stdout, prompts no stderr. Erro → `{"erro": "..."}` e exit 1. Senha = 1ª linha do stdin; em `notas --gravar`, o resto do stdin são as notas.
+
+```sh
+printf 's3nha\ns3nha\n' | wallet-gen --json gerar --dica "dica" --guardar-view-key
+# {"arquivo": ".../wallets/2026-11-24_130102.json", "enderecos": {"btc": "bc1q…", "eth": "0x…", "xmr": "4…"}, "view_key_guardada": true}
+wallet-gen --json lista                       # {"pasta": "...", "arquivos": ["2026-11-24_130102.json"]}
+wallet-gen --json publicas 2026-11-24_130102.json          # {"arquivo", "dica", "enderecos"}
+printf 's3nha\n' | wallet-gen --json privadas 2026-11-24_130102.json   # {"arquivo", "enderecos", "privadas", "notas"}
+printf 's3nha\nseed do cofre\n' | wallet-gen --json notas 2026-11-24_130102.json --gravar   # {"arquivo", "notas", "gravou": true}
+wallet-gen --json saldo 2026-11-24_130102.json             # {"arquivo", "enderecos", "saldo": {"btc": "0 BTC  · via …", …}}
+```
+
+Saldo por moeda: `"<valor> <MOEDA>  · via <nó>"` ou `"falhou em todos: …"` (nunca 0 em falha).
+
 ## Botões (app e web)
 
 | Botão | Senha? | Rede? | O que faz |
 |---|---|---|---|
-| Gerar novo | define | não | app: cria `wallets/<data_hora>.json` (0600, nunca sobrescreve). Web: baixa o arquivo; endereços só aparecem abrindo ele (garante que foi salvo) |
+| Gerar novo | define | não | app: cria `wallets/<data_hora>.json` (0600 no Mac/Linux; no Windows, ACL da pasta do usuário; nunca sobrescreve). Web: baixa o arquivo; endereços só aparecem abrindo ele (garante que foi salvo) |
 | Ver públicas | não | não | escolhe arquivo, mostra endereços |
-| Ver privadas | sim (mostra a dica) | não | mostra chaves privadas |
+| Ver privadas | sim (mostra a dica) | não | mostra chaves privadas e libera as notas |
+| Salvar notas | (a mesma, já aberta) | não | cifra as notas com a mesma senha no mesmo arquivo. App: grava no lugar (atômico). Web: baixa o arquivo atualizado |
 | Ver saldo | não | **sim** | consulta nós públicos |
 | Sobre | não | não | mesmo texto do `--about` |
 
@@ -108,6 +127,7 @@ CI (`.github/workflows/ci.yml`): lint (ruff + eslint, complexidade ≤ 10) → c
 
 - `scrypt` (N=2¹⁷, r=8, p=1, sal 16 bytes) → **AES-256-GCM** (nonce 16 bytes, `os.urandom`). Senha normalizada NFC. Senha errada falha alto (tag GCM).
 - Em aberto: dica, endereços, data de criação, parâmetros. Opcional: view key privada XMR (ver abaixo).
+- **Notas (vault):** campo `notes_gcm`, AES-256-GCM com a **mesma chave** derivada da senha e **nonce novo a cada gravação** (reusar nonce quebraria o GCM). O bloco das chaves (`aes_gcm`) nunca é regravado; senha errada não grava nada. Arquivo antigo sem notas → notas vazias.
 - **Pós-quântico:** o arquivo só usa cripto simétrica. AES-256 contra Grover fica com ~128 bits, o que é considerado seguro. Não há etapa de chave pública para ML-KEM substituir. Limite real = força da senha. As moedas em si (secp256k1/ed25519) não são pós-quânticas — isso é das redes, não do arquivo.
 
 ## Saldo (único momento com rede)
