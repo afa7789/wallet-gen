@@ -21,6 +21,7 @@ DEFAULT_NODES = {
         "https://eth.drpc.org",
         "https://eth.merkle.io",
         "https://rpc.flashbots.net",
+        "https://eth-mainnet.public.blastapi.io",  # da lista do Cake Wallet
     ],
     "xmr": [
         "xmr-node.cakewallet.com:18081",
@@ -29,6 +30,8 @@ DEFAULT_NODES = {
         "nodes.hashvault.pro:18081",
         "xmr.stormycloud.org:18089",
         "monero.stackwallet.com:18081",
+        "node2.monerodevs.org:18089",  # node2/node3: da lista do Cake Wallet
+        "node3.monerodevs.org:18089",
     ],
 }
 TIMEOUT = 20

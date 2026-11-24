@@ -4,7 +4,12 @@ import moneroTs from "monero-ts";
 
 export const NODES = {
   btc: ["https://mempool.space/api", "https://blockstream.info/api"],
-  eth: ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org", "https://rpc.flashbots.net"],
+  eth: [
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth.drpc.org",
+    "https://rpc.flashbots.net",
+    "https://eth-mainnet.public.blastapi.io", // da lista do Cake Wallet
+  ],
   xmr: ["https://xmr-node.cakewallet.com:18081", "https://node.sethforprivacy.com:443"],
 };
 const XMR_BLOCK_SECONDS = 120;

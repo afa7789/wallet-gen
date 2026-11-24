@@ -136,11 +136,11 @@ CI (`.github/workflows/ci.yml`): lint (ruff + eslint, complexidade ≤ 10) → c
 | Moeda | Nós padrão (em ordem, com fallback) | Sai da máquina |
 |---|---|---|
 | BTC | mempool.space, blockstream.info, mempool.emzy.de (Esplora) | endereço |
-| ETH | publicnode, drpc, merkle, flashbots (`eth_getBalance`) | endereço |
-| XMR | cakewallet, sethforprivacy, monerodevs, hashvault, stormycloud, stackwallet | nada de chave: `monero-wallet-rpc` roda local, nó só serve blocos |
+| ETH | publicnode, drpc, merkle, flashbots, blastapi (`eth_getBalance`) | endereço |
+| XMR | cakewallet, sethforprivacy, monerodevs (1, 2, 3), hashvault, stormycloud, stackwallet | nada de chave: `monero-wallet-rpc` roda local, nó só serve blocos |
 
 - XMR precisa da view key **privada** (a pública já está dentro do endereço). Opt-in: no app, `"guardar_view_key_xmr": true` no `config.json`; na web, a caixinha ao gerar. Novos arquivos guardam a view key em aberto. Ela deixa ver o que entrou, **não** deixa gastar. Padrão: desligado.
-- Saldo XMR: app usa `monero-wallet-rpc` oficial (`brew install monero`, ~670 MB com dependências, **não** baixa blockchain); web usa `monero-ts` no próprio navegador (só nós com https + CORS: cakewallet, sethforprivacy).
+- Saldo XMR: app usa `monero-wallet-rpc` oficial (`brew install monero`, ~670 MB com dependências, **não** baixa blockchain); web usa `monero-ts` no próprio navegador (só nós com https + CORS: cakewallet, sethforprivacy). Os padrão de XMR e ETH incluem os nós que o Cake Wallet usa.
 - XMR view-only mostra **recebido**, não vê gastos. Escaneia a partir de ~3 dias antes da criação do arquivo, toda vez (nada fica em cache). Medido no app: wallet de ~10 dias ≈ 40 s; de ~90 dias ≈ 3,5 min. Na web (WASM no navegador) é mais lento: ~10 dias ≈ 3 min.
 - Arquivos antigos (sem `created`/view key) abrem normal; só o saldo XMR fica indisponível.
 - Seus nós no `config.json` vêm antes dos padrão. Falhou um, tenta o próximo; falhou todos, mostra "falhou" (nunca 0).
