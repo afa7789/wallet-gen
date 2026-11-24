@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: actionlint
+        run: bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 && ./actionlint
       - uses: astral-sh/setup-uv@v6
       - run: uvx ruff check . && uvx ruff format --check .
       - uses: oven-sh/setup-bun@v2
@@ -24,15 +26,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, name: linux-x64, ext: "" }
-          - { os: macos-latest, name: macos-arm64, ext: "" }
-          - { os: windows-latest, name: windows-x64, ext: ".exe" }
+          - { os: ubuntu-latest, name: linux-x64, ext: "", wrap: "xvfb-run -a" }
+          - { os: macos-latest, name: macos-arm64, ext: "", wrap: "" }
+          - { os: windows-latest, name: windows-x64, ext: ".exe", wrap: "" }
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     env:
-      DISPLAY_WRAP: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }}
+      DISPLAY_WRAP: ${{ matrix.wrap }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -94,7 +96,7 @@ jobs:
           path: out
           pattern: wallet-gen-*
           merge-multiple: true
-      - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - run: cd out && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Executáveis + SHA256SUMS. Veja o README."
