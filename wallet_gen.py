@@ -76,6 +76,7 @@ ARQUIVO
   scrypt N={n} r={r} p={p}, sal 16 bytes -> AES-256-GCM, nonce 16 bytes (os.urandom)
   Senha normalizada NFC. Em texto aberto: dica, endereços, data de criação, parâmetros e,
   só se guardar_view_key_xmr=true no config.json, a view key PRIVADA do XMR (vê, não gasta).
+  Notas (vault): mesma chave da senha, nonce novo a cada gravação; chaves nunca regravadas.
 
 PÓS-QUÂNTICO
   Arquivo usa só cripto simétrica: AES-256 (Grover -> ~128 bits pós-quântico) + scrypt.

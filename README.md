@@ -17,7 +17,7 @@ Executáveis não são assinados:
 - **Linux:** `chmod +x wallet-gen-linux-x64 && ./wallet-gen-linux-x64`.
 - Confira o `SHA256SUMS` do Release: `shasum -a 256 -c SHA256SUMS`.
 
-Onde ficam as wallets: executável → `~/wallet-gen/wallets/`; código-fonte → `wallets/` na pasta do projeto; web → onde o navegador baixar. Troque com `WALLET_GEN_HOME=/outra/pasta`.
+Onde ficam as wallets e o `config.json`: executável → `~/wallet-gen/` (`wallets/` + `config.json`); código-fonte → pasta do projeto; web → onde o navegador baixar. Troque com `WALLET_GEN_HOME=/outra/pasta`.
 
 ## CLI
 
@@ -140,7 +140,7 @@ CI (`.github/workflows/ci.yml`): lint (ruff + eslint, complexidade ≤ 10) → c
 
 - XMR precisa da view key **privada** (a pública já está dentro do endereço). Opt-in: no app, `"guardar_view_key_xmr": true` no `config.json`; na web, a caixinha ao gerar. Novos arquivos guardam a view key em aberto. Ela deixa ver o que entrou, **não** deixa gastar. Padrão: desligado.
 - Saldo XMR: app usa `monero-wallet-rpc` oficial (`brew install monero`, ~670 MB com dependências, **não** baixa blockchain); web usa `monero-ts` no próprio navegador (só nós com https + CORS: cakewallet, sethforprivacy).
-- XMR view-only mostra **recebido**, não vê gastos. Escaneia a partir de ~3 dias antes da criação do arquivo, toda vez (nada fica em cache). Medido: wallet de ~10 dias ≈ 40 s; de ~90 dias ≈ 3,5 min.
+- XMR view-only mostra **recebido**, não vê gastos. Escaneia a partir de ~3 dias antes da criação do arquivo, toda vez (nada fica em cache). Medido no app: wallet de ~10 dias ≈ 40 s; de ~90 dias ≈ 3,5 min. Na web (WASM no navegador) é mais lento: ~10 dias ≈ 3 min.
 - Arquivos antigos (sem `created`/view key) abrem normal; só o saldo XMR fica indisponível.
 - Seus nós no `config.json` vêm antes dos padrão. Falhou um, tenta o próximo; falhou todos, mostra "falhou" (nunca 0).
 - Valor é palavra de terceiro. Consultar as 3 do mesmo IP liga elas entre si.
