@@ -469,7 +469,7 @@ def check_web(online: bool) -> None:
 def check_exe(exe: Path) -> None:
     """Executável pronto: mesma bateria da CLI + GUI abre e fica de pé (sem crash de import/Tk)."""
     with tempfile.TemporaryDirectory() as home:
-        check_cli(Path(home), [str(exe)])
+        check_cli(Path(home) / "primeiro-uso", [str(exe)])  # pasta ainda não existe, como no 1º uso real
         windows = os.name == "nt"
         flags = (
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if windows else {"start_new_session": True}
@@ -517,5 +517,5 @@ if __name__ == "__main__":
             check_notes(Path(d))
             check_gui(Path(d))
         with tempfile.TemporaryDirectory() as home:
-            check_cli(Path(home))
+            check_cli(Path(home) / "primeiro-uso")  # pasta ainda não existe, como no 1º uso real
     print("OK")

@@ -229,7 +229,7 @@ def rewrite(path: Path, wallet: dict) -> None:
 
 
 def save(wallet: dict, folder: Path = WALLETS_DIR) -> Path:
-    folder.mkdir(mode=0o700, exist_ok=True)
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)  # 1º uso: ~/wallet-gen ainda não existe
     stem = time.strftime("%Y-%m-%d_%H%M%S")
     for n in range(1000):  # mesmo segundo -> -1, -2...; O_EXCL: nunca sobrescreve
         path = folder / (f"{stem}-{n}.json" if n else f"{stem}.json")
