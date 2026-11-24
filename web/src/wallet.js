@@ -3,6 +3,9 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, bytesToNumberLE, hexToBytes, numberToBytesLE } from "@noble/curves/utils.js";
 import { scryptAsync } from "@noble/hashes/scrypt.js";
+import { HDKey } from "@scure/bip32";
+import { entropyToMnemonic, mnemonicToSeedSync } from "@scure/bip39";
+import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { p2wpkh, WIF } from "@scure/btc-signer";
 import { addr as ethAddr } from "micro-eth-signer";
 import moneroTs from "monero-ts";
@@ -23,13 +26,19 @@ function secpKey() {
 const xmrWallet = (config) =>
   moneroTs.createWalletKeys({ networkType: moneroTs.MoneroNetworkType.MAINNET, proxyToWorker: false, ...config });
 
-/** BTC: import Electrum (p2wpkh:WIF). ETH: hex. XMR: seed 25 palavras; spend = 32 bytes aleatórios mod l. */
+/** Seed BIP39 -> BIP84 m/84'/0'/0'/0/0 -> WIF da chave do 1º endereço bc1q (import do Electrum). */
+export function btcFromSeed(words) {
+  const node = HDKey.fromMasterSeed(mnemonicToSeedSync(words)).derive("m/84'/0'/0'/0/0");
+  return `p2wpkh:${WIF().encode(node.privateKey)}`;
+}
+
+/** BTC: seed BIP39 24 palavras (Cake/Sparrow) + WIF (Electrum). ETH: hex. XMR: 25 palavras; spend = 32 bytes mod l. */
 export async function newSecrets() {
-  const btc = `p2wpkh:${WIF().encode(secpKey())}`;
+  const btcSeed = entropyToMnemonic(random(32), wordlist);
   const eth = bytesToHex(secpKey());
   const spend = numberToBytesLE(bytesToNumberLE(random(32)) % XMR_ORDER, 32);
   const xmr = await (await xmrWallet({ privateSpendKey: bytesToHex(spend), language: "English" })).getSeed();
-  return { btc, eth, xmr };
+  return { btc: btcFromSeed(btcSeed), btc_seed: btcSeed, eth, xmr };
 }
 
 export async function addresses(keys) {

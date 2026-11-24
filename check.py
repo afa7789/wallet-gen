@@ -21,7 +21,15 @@ from decimal import Decimal
 from importlib import metadata
 from pathlib import Path
 
-from bip_utils import MoneroMnemonicDecoder, WifDecoder, WifEncoder
+from bip_utils import (
+    Bip39MnemonicDecoder,
+    Bip39SeedGenerator,
+    Bip44Changes,
+    Bip84,
+    Bip84Coins,
+    MoneroMnemonicDecoder,
+    WifEncoder,
+)
 from monero.seed import Seed  # implementação independente do Monero
 
 import nodes
@@ -69,15 +77,32 @@ def check_entropy_source() -> None:
         os.urandom, random._urandom = real
     assert [len(b) for b in served] == [32, 32, 32], f"esperado 3x32 bytes do SO, veio {served}"
     used = {
-        WifDecoder.Decode(keys["btc"].removeprefix("p2wpkh:"))[0],
+        Bip39MnemonicDecoder().Decode(keys["btc_seed"]),  # BTC: entropia da seed BIP39 de 24 palavras
         bytes.fromhex(keys["eth"]),
         MoneroMnemonicDecoder().Decode(keys["xmr"]),
     }
     assert used == set(served), "alguma chave não veio do os.urandom"
-    assert len(set(w.new_secrets().values()) | set(keys.values())) == 6, "chaves repetiram entre chamadas"
+    assert keys["btc"] == w.btc_from_seed(keys["btc_seed"]), "WIF não é a chave da seed"
+    assert len(set(w.new_secrets().values()) | set(keys.values())) == 8, "chaves repetiram entre chamadas"
+
+
+BIP84_VECTOR = "abandon " * 11 + "about"  # vetor oficial do BIP84
+
+
+def bip84_address(words: str) -> str:
+    seed = Bip39SeedGenerator(words).Generate()
+    node = Bip84.FromSeed(seed, Bip84Coins.BITCOIN).Purpose().Coin().Account(0)
+    return node.Change(Bip44Changes.CHAIN_EXT).AddressIndex(0).PublicKey().ToAddress()
 
 
 def check_vectors() -> None:
+    assert w.btc_from_seed(BIP84_VECTOR) == "p2wpkh:KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d"
+    assert bip84_address(BIP84_VECTOR) == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"
+    fresh = w.new_secrets()
+    assert len(fresh["btc_seed"].split()) == 24, "BIP39 tem que ter 24 palavras (256 bits)"
+    assert w.addresses(fresh)["btc"] == bip84_address(fresh["btc_seed"]), (
+        "seed e WIF levam a endereços diferentes"
+    )
     a = w.addresses({**KEY_ONE, "xmr": w.new_secrets()["xmr"]})
     assert a["btc"] == "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", a["btc"]
     assert a["eth"] == "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf", a["eth"]

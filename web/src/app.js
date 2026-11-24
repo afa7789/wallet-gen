@@ -18,6 +18,7 @@ function* rows(addrs, keys, balances) {
     yield ["", coin.toUpperCase(), coin];
     yield ["endereço", addr, ""];
     if (keys) yield ["privada", keys[coin], "secret"];
+    if (keys?.[`${coin}_seed`]) yield ["seed", keys[`${coin}_seed`], "secret"]; // BTC novo: BIP39
     if (balances) yield ["saldo", balances[coin] ?? "consultando…", ""];
   }
 }
@@ -122,10 +123,12 @@ function about() {
       "",
       "ENTROPIA",
       "  32 bytes por moeda de crypto.getRandomValues (CSPRNG do navegador/SO). Nada feito à mão.",
+      "  BTC: os 32 bytes são a entropia da seed BIP39 (24 palavras).",
       "  XMR: os 32 bytes mod l viram a spend key; monero-ts gera a seed de 25 palavras.",
       "",
       "DERIVAÇÃO",
-      "  BTC  @scure/btc-signer: WIF comprimido + P2WPKH bech32 (bc1q...)   curva: @noble/curves",
+      "  BTC  seed BIP39 24 palavras (@scure/bip39) -> BIP84 m/84'/0'/0'/0/0 (@scure/bip32) -> bc1q",
+      "       arquivo guarda a seed (Cake, Sparrow) e a WIF da mesma chave (Electrum: p2wpkh:...)",
       "  ETH  micro-eth-signer: keccak256 + checksum EIP-55",
       "  XMR  monero-ts (oficial da comunidade): seed, endereço, view key",
       "",

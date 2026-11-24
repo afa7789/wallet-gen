@@ -88,7 +88,7 @@ Por isso aqui nada é feito à mão: só o CSPRNG do sistema e bibliotecas manti
 
 | Moeda | Entropia | Derivação | Curva (lib mantida) |
 |---|---|---|---|
-| BTC | 32 bytes `secrets.token_bytes` → `os.urandom` | WIF comprimido mainnet → P2WPKH bech32 `bc1q…` | secp256k1: coincurve (libsecp256k1, do Bitcoin Core) |
+| BTC | 32 bytes `secrets.token_bytes` → `os.urandom` = entropia da seed BIP39 (24 palavras) | BIP39 → BIP84 `m/84'/0'/0'/0/0` → P2WPKH `bc1q…`; arquivo guarda a seed **e** a WIF da mesma chave | secp256k1: coincurve (libsecp256k1, do Bitcoin Core) |
 | ETH | 32 bytes `secrets.token_hex` → `os.urandom` | keccak256(pubkey)[12:] + checksum EIP-55 | secp256k1: coincurve (libsecp256k1) |
 | XMR | 256 bits bip_utils `MoneroEntropyGenerator` → `os.urandom` | seed legacy 25 palavras; spend = sc_reduce32(seed), view = sc_reduce32(keccak256(spend)) | ed25519: PyNaCl (libsodium) |
 
@@ -96,7 +96,7 @@ Por isso aqui nada é feito à mão: só o CSPRNG do sistema e bibliotecas manti
 
 | Moeda | Entropia | Derivação |
 |---|---|---|
-| BTC | 32 bytes `crypto.getRandomValues` | `@scure/btc-signer` (WIF + P2WPKH), curva `@noble/curves` |
+| BTC | 32 bytes `crypto.getRandomValues` = entropia da seed BIP39 | `@scure/bip39` + `@scure/bip32` (BIP84) + `@scure/btc-signer` (WIF, P2WPKH), curva `@noble/curves` |
 | ETH | 32 bytes `crypto.getRandomValues` | `micro-eth-signer` (EIP-55) |
 | XMR | 32 bytes `crypto.getRandomValues` mod l = spend key | `monero-ts` 0.11.22 (seed 25 palavras, endereço, view key) |
 
@@ -108,7 +108,8 @@ Arquivo web: scrypt `@noble/hashes` + AES-256-GCM do WebCrypto, mesmos parâmetr
 - Libs: bip_utils 2.13.0, coincurve 21.0.0, PyNaCl 1.6.2, pycryptodome 4.6.0 (todas fixadas no lock; `--about` mostra as em uso).
 - Verificação:
   - **Fonte da entropia (lição Coldcard):** intercepta `os.urandom`/`random._urandom` (Python) e `crypto.getRandomValues` (web) e exige que as 3 chaves sejam exatamente os 3 blocos de 32 bytes servidos. Qualquer fallback ou outra fonte → falha.
-  - BTC/ETH contra vetores públicos (chave = 1); XMR contra lib independente (monero-python), endereço e view key.
+  - BTC/ETH contra vetores públicos (chave = 1 e vetor oficial do BIP84); seed e WIF provados levando ao mesmo `bc1q`; XMR contra lib independente (monero-python), endereço e view key.
+  - Web: `@noble/curves` pede 16 bytes extras por multiplicação (blinding contra canal lateral). O teste prova que isso não muda a chave: mesma entropia + blinding diferente = chaves idênticas. Mutação com `Math.random` → teste falha.
   - Arquivo da web abre no Python e do Python abre na web (inclui o baixado pelo navegador no E2E).
 
 ```sh
@@ -153,6 +154,19 @@ CI (`.github/workflows/ci.yml`): lint (ruff + eslint, complexidade ≤ 10) → c
 ```
 
 `config.json` ausente ou inválido → padrão (view key desligada). Nunca trava Gerar/Ver.
+
+## Restaurar em outras carteiras
+
+Pegue as chaves com **Ver privadas** (ou `wallet-gen privadas ARQ`). Nunca cole chave em chat, nuvem ou screenshot.
+
+| Moeda | Carteira | Cole | Confira |
+|---|---|---|---|
+| BTC | Cake, Sparrow, BlueWallet | a **seed** de 24 palavras (BIP39; tipo Native SegWit / BIP84 se perguntar) | 1º endereço `bc1q…` igual |
+| BTC | Electrum | a linha `p2wpkh:K…` inteira ("Import Bitcoin addresses or private keys") | idem |
+| ETH | MetaMask, Cake (aba Keys) | o hex de 64 caracteres | `0x…` igual |
+| XMR | Cake, Feather, Monero GUI | as 25 palavras (Legacy, não Polyseed) + data de criação do arquivo | endereço **principal #0** `4…` (Cake mostra subendereço `8…` em Receber) |
+
+Arquivos gerados antes da v0.2.0 não têm seed BTC, só WIF: abrem no Electrum/Sparrow; o Cake não importa chave BTC solta ([doc do Cake](https://docs.cakewallet.com/get-started/setup/restore-existing-wallet)).
 
 ## Limites
 

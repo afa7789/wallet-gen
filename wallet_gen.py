@@ -26,6 +26,11 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from bip_utils import (
+    Bip39MnemonicGenerator,
+    Bip39SeedGenerator,
+    Bip44Changes,
+    Bip84,
+    Bip84Coins,
     EthAddrEncoder,
     Monero,
     MoneroMnemonicGenerator,
@@ -34,7 +39,6 @@ from bip_utils import (
     P2WPKHAddrEncoder,
     Secp256k1PrivateKey,
     WifDecoder,
-    WifEncoder,
 )
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import scrypt
@@ -60,14 +64,15 @@ CRYPTO_DEPS = ("bip_utils", "coincurve", "PyNaCl", "pycryptodome")
 ABOUT = """wallet-gen — o que gera as chaves
 
 ENTROPIA
-  BTC  32 bytes   secrets.token_bytes -> os.urandom (CSPRNG do sistema operacional)
+  BTC  32 bytes   secrets.token_bytes -> os.urandom (CSPRNG do sistema operacional) = seed BIP39
   ETH  32 bytes   secrets.token_hex   -> os.urandom
   XMR  256 bits   bip_utils MoneroEntropyGenerator -> os.urandom
   Não usa random/Math.random, mt19937, relógio como seed nem seed de 32 bits.
   Cada moeda tem chave própria e independente (sem BIP32/BIP39).
 
 DERIVAÇÃO
-  BTC  WIF comprimido mainnet -> P2WPKH bech32 (bc1q...)  secp256k1: coincurve (libsecp256k1)
+  BTC  seed BIP39 24 palavras -> BIP84 m/84'/0'/0'/0/0 -> P2WPKH bc1q...  secp256k1: coincurve
+       arquivo guarda a seed (Cake, Sparrow) e a WIF da mesma chave (Electrum: p2wpkh:...)
   ETH  keccak256(pubkey)[12:] + checksum EIP-55          secp256k1: coincurve (libsecp256k1)
   XMR  seed legacy 25 palavras (inglês)                   ed25519: PyNaCl (libsodium)
        spend = sc_reduce32(seed), view = sc_reduce32(keccak256(spend))
@@ -130,11 +135,23 @@ def load_config() -> dict:
     return {"guardar_view_key_xmr": keep_view_key, "nos": nos}
 
 
+def btc_from_seed(words: str) -> str:
+    """Seed BIP39 -> BIP84 m/84'/0'/0'/0/0 -> WIF da chave do 1º endereço bc1q (import do Electrum)."""
+    seed = Bip39SeedGenerator(words).Generate()
+    node = Bip84.FromSeed(seed, Bip84Coins.BITCOIN).Purpose().Coin().Account(0)
+    return f"p2wpkh:{node.Change(Bip44Changes.CHAIN_EXT).AddressIndex(0).PrivateKey().ToWif()}"
+
+
 def new_secrets() -> dict:
-    """BTC: WIF no formato de import do Electrum. ETH: hex. XMR: seed de 25 palavras."""
-    wif = WifEncoder.Encode(secrets.token_bytes(32))
+    """BTC: seed BIP39 24 palavras (Cake/Sparrow) + WIF da mesma chave (Electrum). ETH: hex. XMR: 25."""
+    btc_seed = Bip39MnemonicGenerator().FromEntropy(secrets.token_bytes(32)).ToStr()
     xmr = MoneroMnemonicGenerator().FromWordsNumber(MoneroWordsNum.WORDS_NUM_25)
-    return {"btc": f"p2wpkh:{wif}", "eth": secrets.token_hex(32), "xmr": xmr.ToStr()}
+    return {
+        "btc": btc_from_seed(btc_seed),
+        "btc_seed": btc_seed,
+        "eth": secrets.token_hex(32),
+        "xmr": xmr.ToStr(),
+    }
 
 
 def _xmr(keys: dict) -> Monero:
@@ -233,6 +250,8 @@ def rows(addrs: dict, keys: dict | None = None, balances: dict | None = None):
         yield "endereço", addr, "plain"
         if keys:
             yield "privada", keys[coin], "secret"
+        if keys and keys.get(f"{coin}_seed"):  # BTC de conjuntos novos: seed BIP39 (arquivos antigos: só WIF)
+            yield "seed", keys[f"{coin}_seed"], "secret"
         if balances:
             yield "saldo", balances[coin], "plain"
 
