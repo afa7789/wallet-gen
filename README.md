@@ -41,7 +41,7 @@ wallet-gen                                    # sem comando: abre a janela
 
 ### Para agentes e scripts (`--json`)
 
-`--json` (antes ou depois do comando) → **um objeto JSON** no stdout, prompts no stderr. Erro → `{"erro": "..."}` e exit 1. Senha = 1ª linha do stdin; em `notas --gravar`, o resto do stdin são as notas.
+`--json` (antes ou depois do comando) → **um objeto JSON** no stdout, prompts no stderr, tudo em UTF-8 (inclusive no Windows). Erro → `{"erro": "..."}` e exit 1. Senha = 1ª linha do stdin; em `notas --gravar`, o resto do stdin são as notas.
 
 ```sh
 printf 's3nha\ns3nha\n' | wallet-gen --json gerar --dica "dica" --guardar-view-key

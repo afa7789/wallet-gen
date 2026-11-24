@@ -171,14 +171,18 @@ def check_about() -> None:
     assert "os.urandom" in text and "PÓS-QUÂNTICO" in text
     assert all(f"{d} {metadata.version(d)}" in text for d in w.CRYPTO_DEPS)
     assert all(url in text for urls in nodes.DEFAULT_NODES.values() for url in urls)
-    cli = subprocess.run([sys.executable, w.__file__, "--about"], capture_output=True, text=True)
+    cli = subprocess.run(
+        [sys.executable, w.__file__, "--about"], capture_output=True, text=True, encoding="utf-8"
+    )
     assert cli.returncode == 0 and cli.stdout.strip() == text.strip(), cli.stderr
 
 
 def cli(home: Path, *args: str, stdin: str = "", exe: list[str] | None = None) -> subprocess.CompletedProcess:
     cmd = (exe or [sys.executable, w.__file__]) + list(args)
     env = {**os.environ, "WALLET_GEN_HOME": str(home)}
-    return subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env, timeout=300)
+    return subprocess.run(
+        cmd, input=stdin, capture_output=True, text=True, encoding="utf-8", env=env, timeout=300
+    )
 
 
 def check_cli(home: Path, exe: list[str] | None = None) -> None:
@@ -389,7 +393,9 @@ def check_no_orphan() -> None:
         "print(*[p.pid for p in nodes._RUNNING])\n"
     )
     here = Path(__file__).resolve().parent
-    run = subprocess.run([sys.executable, "-c", code], cwd=here, capture_output=True, text=True, timeout=120)
+    run = subprocess.run(
+        [sys.executable, "-c", code], cwd=here, capture_output=True, text=True, encoding="utf-8", timeout=120
+    )
     pids = [int(p) for p in run.stdout.split()]
     assert pids, f"wallet-rpc não estava rodando: atexit não exercitado {run.stderr[-300:]}"
     for pid in pids:
@@ -401,7 +407,7 @@ WEB = Path(__file__).resolve().parent / "web"
 
 
 def run_web(*cmd: str) -> str:
-    done = subprocess.run(list(cmd), cwd=WEB, capture_output=True, text=True, timeout=900)
+    done = subprocess.run(list(cmd), cwd=WEB, capture_output=True, text=True, encoding="utf-8", timeout=900)
     assert done.returncode == 0, f"{cmd}: {done.stdout[-800:]} {done.stderr[-800:]}"
     return done.stdout
 
@@ -444,7 +450,9 @@ def check_exe(exe: Path) -> None:
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if windows else {"start_new_session": True}
         )
         env = {**os.environ, "WALLET_GEN_HOME": home}
-        gui = subprocess.Popen([str(exe)], env=env, stderr=subprocess.PIPE, text=True, **flags)
+        gui = subprocess.Popen(
+            [str(exe)], env=env, stderr=subprocess.PIPE, text=True, encoding="utf-8", **flags
+        )
         try:
             gui.wait(10)
             sys.exit(f"GUI do executável fechou sozinha: {gui.stderr.read()[-500:]}")

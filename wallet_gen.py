@@ -529,7 +529,15 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _utf8_stdio() -> None:
+    """Pipe no Windows é cp1252 (quebra com ✓, emoji...). Contrato da CLI: stdin/stdout/stderr em UTF-8."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> None:
+    _utf8_stdio()
     args = _parser().parse_args(argv)
     if args.about:
         args.run = cmd_sobre
